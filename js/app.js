@@ -1,10 +1,14 @@
-// js/app.js - Complete updated version
+// js/app.js - Complete updated version with proper state management
 const API_BASE = 'https://secure-portal.fastapicloud.dev';
 
 console.log('🌐 API_BASE:', API_BASE);
 
-let currentUser = null;
-let accessToken = null;
+// Auth state - stored globally
+let authState = {
+    accessToken: null,
+    currentUser: null,
+    isAuthenticated: false
+};
 
 // Toast notifications
 function showToast(message, type = 'info') {
@@ -18,10 +22,10 @@ function showToast(message, type = 'info') {
     bsToast.show();
 }
 
-// API helpers - ALWAYS get token from localStorage
+// API helpers
 async function apiRequest(endpoint, options = {}) {
-    // Always get the latest token from localStorage
-    const token = localStorage.getItem('accessToken');
+    // Always get the latest token from authState
+    const token = authState.accessToken || localStorage.getItem('accessToken');
     
     const headers = {
         'Content-Type': 'application/json',
@@ -30,12 +34,11 @@ async function apiRequest(endpoint, options = {}) {
     
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
-        window.accessToken = token;
+        authState.accessToken = token;
     }
     
     const url = `${API_BASE}${endpoint}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
-    console.log('📋 Headers:', headers);
     
     try {
         const response = await fetch(url, {
@@ -53,6 +56,11 @@ async function apiRequest(endpoint, options = {}) {
         }
         
         if (!response.ok) {
+            if (response.status === 401) {
+                // Token expired or invalid - clear session
+                clearAuthState();
+                throw new Error('Session expired. Please login again.');
+            }
             const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Request failed' : data || 'Request failed';
             throw new Error(errorMessage);
         }
@@ -65,6 +73,59 @@ async function apiRequest(endpoint, options = {}) {
         }
         throw error;
     }
+}
+
+// Auth state management functions
+function setAuthState(token, user) {
+    authState.accessToken = token;
+    authState.currentUser = user;
+    authState.isAuthenticated = !!token && !!user;
+    
+    if (token) {
+        localStorage.setItem('accessToken', token);
+    } else {
+        localStorage.removeItem('accessToken');
+    }
+    
+    if (user) {
+        localStorage.setItem('currentUser', JSON.stringify(user));
+    } else {
+        localStorage.removeItem('currentUser');
+    }
+    
+    // Update UI
+    updateAuthUI();
+    console.log('🔐 Auth state updated:', authState.isAuthenticated ? 'Authenticated' : 'Not authenticated');
+}
+
+function clearAuthState() {
+    authState.accessToken = null;
+    authState.currentUser = null;
+    authState.isAuthenticated = false;
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('currentUser');
+    updateAuthUI();
+}
+
+function loadAuthState() {
+    const token = localStorage.getItem('accessToken');
+    const userJson = localStorage.getItem('currentUser');
+    
+    if (token && userJson) {
+        try {
+            const user = JSON.parse(userJson);
+            authState.accessToken = token;
+            authState.currentUser = user;
+            authState.isAuthenticated = true;
+            updateAuthUI();
+            return true;
+        } catch (e) {
+            console.error('Error loading auth state:', e);
+            clearAuthState();
+            return false;
+        }
+    }
+    return false;
 }
 
 // DOM helpers
@@ -87,20 +148,11 @@ function showSection(sectionId) {
 
 // Navigation
 document.addEventListener('DOMContentLoaded', function() {
+    // Load saved auth state
+    loadAuthState();
+    
     // Show home section by default
     showSection('home');
-    
-    // Check if user is already logged in
-    const savedToken = localStorage.getItem('accessToken');
-    const savedUser = localStorage.getItem('currentUser');
-    
-    if (savedToken && savedUser) {
-        window.accessToken = savedToken;
-        window.currentUser = JSON.parse(savedUser);
-        updateAuthUI();
-        // Load profile after a small delay to ensure UI is ready
-        setTimeout(() => loadProfile(), 100);
-    }
     
     // Navigation links
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -109,9 +161,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const href = this.getAttribute('href');
             if (href && href.startsWith('#')) {
                 const sectionId = href.substring(1);
-                if (sectionId === 'profile' && !accessToken) {
-                    showToast('Please login first', 'error');
-                    return;
+                if (sectionId === 'profile' || sectionId === 'encrypt' || sectionId === 'files' || sectionId === 'messages') {
+                    if (!authState.isAuthenticated) {
+                        showToast('Please login first', 'error');
+                        // Show login modal
+                        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+                        loginModal.show();
+                        return;
+                    }
                 }
                 showSection(sectionId);
                 document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
@@ -122,8 +179,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Home buttons
     $('#homeEncryptBtn')?.addEventListener('click', () => {
-        if (!accessToken) {
+        if (!authState.isAuthenticated) {
             showToast('Please login first', 'error');
+            const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+            loginModal.show();
             return;
         }
         showSection('encrypt');
@@ -171,78 +230,47 @@ function updateAuthUI() {
     const navUser = document.getElementById('nav-user');
     const userDisplay = document.getElementById('userDisplay');
     
-    const token = localStorage.getItem('accessToken');
-    const user = localStorage.getItem('currentUser');
-    
-    if (token && user) {
-        window.accessToken = token;
-        window.currentUser = JSON.parse(user);
+    if (authState.isAuthenticated && authState.currentUser) {
         navAuth.classList.add('d-none');
         navUser.classList.remove('d-none');
-        userDisplay.textContent = window.currentUser.username || 'User';
+        userDisplay.textContent = authState.currentUser.username || 'User';
+        
+        // Update profile section
+        document.getElementById('profileUsername').textContent = authState.currentUser.username || 'User';
+        document.getElementById('profileEmail').textContent = authState.currentUser.email || '';
     } else {
         navAuth.classList.remove('d-none');
         navUser.classList.add('d-none');
-        window.accessToken = null;
-        window.currentUser = null;
     }
 }
 
-// Load profile with proper token handling
+// Load profile
 async function loadProfile() {
-    const token = localStorage.getItem('accessToken');
-    if (!token) {
-        console.log('No token found, skipping profile load');
+    if (!authState.isAuthenticated) {
+        console.log('Not authenticated, skipping profile load');
         return;
     }
     
     try {
-        console.log('🔄 Loading profile with token:', token.substring(0, 30) + '...');
-        
-        const response = await fetch(`${API_BASE}/api/auth/me`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        console.log('📥 Profile response status:', response.status);
-        
-        if (!response.ok) {
-            if (response.status === 401) {
-                // Token expired or invalid
-                console.log('Token invalid, clearing session');
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('currentUser');
-                window.accessToken = null;
-                window.currentUser = null;
-                updateAuthUI();
-                showToast('Session expired. Please login again.', 'error');
-                return;
-            }
-            throw new Error(`Failed to load profile: ${response.status}`);
-        }
-        
-        const userData = await response.json();
-        console.log('👤 User data loaded:', userData);
-        
-        window.currentUser = userData;
-        localStorage.setItem('currentUser', JSON.stringify(userData));
-        
-        document.getElementById('profileUsername').textContent = userData.username || 'User';
-        document.getElementById('profileEmail').textContent = userData.email || '';
+        const user = await apiRequest('/api/auth/me');
+        setAuthState(authState.accessToken, user);
         updateAuthUI();
         console.log('✅ Profile loaded successfully');
-        
     } catch (error) {
         console.error('❌ Failed to load profile:', error);
+        if (error.message.includes('Session expired')) {
+            clearAuthState();
+            showToast('Session expired. Please login again.', 'error');
+        }
     }
 }
 
 // Export for other modules
 window.API_BASE = API_BASE;
-window.accessToken = accessToken;
-window.currentUser = currentUser;
+window.authState = authState;
+window.setAuthState = setAuthState;
+window.clearAuthState = clearAuthState;
+window.loadAuthState = loadAuthState;
 window.showToast = showToast;
 window.apiRequest = apiRequest;
 window.showSection = showSection;
