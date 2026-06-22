@@ -22,14 +22,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const email = document.getElementById('registerEmail').value.trim();
             const password = document.getElementById('registerPassword').value;
             
-            // Validate input
             if (!username || !email || !password) {
                 document.getElementById('registerError').innerHTML = 
                     '<div class="status-error">All fields are required</div>';
                 return;
             }
             
-            // Validate password strength
             if (password.length < 8) {
                 document.getElementById('registerError').innerHTML = 
                     '<div class="status-error">Password must be at least 8 characters</div>';
@@ -38,7 +36,6 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const requestData = { username, email, password };
             console.log('📤 Sending to:', `${API_BASE}/api/auth/register`);
-            console.log('📤 Data:', requestData);
             
             try {
                 const response = await fetch(`${API_BASE}/api/auth/register`, {
@@ -66,12 +63,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     throw new Error(errorMessage);
                 }
                 
-                // Success
                 document.getElementById('registerError').innerHTML = 
                     '<div class="status-success">✅ Registration successful! Please login.</div>';
                 showToast('Registration successful! Please login.', 'success');
                 
-                // Close modal after delay
                 setTimeout(() => {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('registerModal'));
                     if (modal) modal.hide();
@@ -88,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Login form
+    // Login form - FIXED to properly save token
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', async function(e) {
@@ -129,26 +124,35 @@ document.addEventListener('DOMContentLoaded', function() {
                     data = await response.text();
                 }
                 
-                console.log('📥 Login response data:', data);
+                console.log('📥 Login response:', data);
                 
                 if (!response.ok) {
                     const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Login failed' : data;
                     throw new Error(errorMessage);
                 }
                 
-                // Success - save token
-                window.accessToken = data.access_token;
-                localStorage.setItem('accessToken', data.access_token);
+                // SAVE TOKEN
+                const token = data.access_token;
+                console.log('🔑 Token received:', token.substring(0, 30) + '...');
                 
-                // Get user info
+                // Save to localStorage
+                localStorage.setItem('accessToken', token);
+                window.accessToken = token;
+                
+                // Get user info with the token
+                console.log('🔄 Getting user info...');
                 const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
                     headers: {
-                        'Authorization': `Bearer ${data.access_token}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
                 
+                console.log('📥 User info response status:', userResponse.status);
+                
                 if (userResponse.ok) {
                     const userData = await userResponse.json();
+                    console.log('👤 User data:', userData);
+                    
                     window.currentUser = userData;
                     localStorage.setItem('currentUser', JSON.stringify(userData));
                     
@@ -161,6 +165,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
                     if (modal) modal.hide();
                     loginForm.reset();
+                } else {
+                    // Token was saved but user info failed
+                    console.error('Failed to get user info');
+                    localStorage.removeItem('accessToken');
+                    window.accessToken = null;
+                    throw new Error('Failed to get user information');
                 }
                 
             } catch (error) {
