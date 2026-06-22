@@ -1,8 +1,7 @@
 // js/app.js
-// Force the API URL to your deployed backend
+// FORCE the API URL - Hardcode it for production
 const API_BASE = 'https://secure-portal.fastapicloud.dev';
 
-// For debugging - log the API URL
 console.log('🌐 API_BASE:', API_BASE);
 
 let currentUser = null;
@@ -20,19 +19,23 @@ function showToast(message, type = 'info') {
     bsToast.show();
 }
 
-// API helpers with better error handling
+// API helpers
 async function apiRequest(endpoint, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers
     };
     
-    if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
+    // IMPORTANT: Always check for the latest token
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        window.accessToken = token;
     }
     
     const url = `${API_BASE}${endpoint}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
+    console.log('📋 Headers:', headers);
     
     try {
         const response = await fetch(url, {
@@ -95,6 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
         window.accessToken = savedToken;
         window.currentUser = JSON.parse(savedUser);
         updateAuthUI();
+        // Load profile to verify token is valid
         loadProfile();
     }
     
@@ -110,7 +114,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 showSection(sectionId);
-                // Update active state
                 document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
                 this.classList.add('active');
             }
@@ -178,21 +181,51 @@ function updateAuthUI() {
     }
 }
 
-// Load profile
+// Load profile with proper token handling
 async function loadProfile() {
-    if (!accessToken) return;
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+        console.log('No token found, skipping profile load');
+        return;
+    }
     
     try {
-        const user = await apiRequest('/api/auth/me');
-        window.currentUser = user;
-        localStorage.setItem('currentUser', JSON.stringify(user));
+        console.log('🔄 Loading profile with token:', token.substring(0, 30) + '...');
         
-        document.getElementById('profileUsername').textContent = user.username || 'User';
-        document.getElementById('profileEmail').textContent = user.email || '';
+        const response = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        console.log('📥 Profile response status:', response.status);
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                // Token expired or invalid
+                console.log('Token invalid, clearing session');
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('currentUser');
+                window.accessToken = null;
+                window.currentUser = null;
+                updateAuthUI();
+                showToast('Session expired. Please login again.', 'error');
+                return;
+            }
+            throw new Error('Failed to load profile');
+        }
+        
+        const userData = await response.json();
+        window.currentUser = userData;
+        localStorage.setItem('currentUser', JSON.stringify(userData));
+        
+        document.getElementById('profileUsername').textContent = userData.username || 'User';
+        document.getElementById('profileEmail').textContent = userData.email || '';
         updateAuthUI();
+        console.log('✅ Profile loaded successfully');
         
     } catch (error) {
-        console.error('Failed to load profile:', error);
+        console.error('❌ Failed to load profile:', error);
     }
 }
 
