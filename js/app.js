@@ -1,5 +1,4 @@
-// js/app.js
-// FORCE the API URL - Hardcode it for production
+// js/app.js - Complete updated version
 const API_BASE = 'https://secure-portal.fastapicloud.dev';
 
 console.log('🌐 API_BASE:', API_BASE);
@@ -19,15 +18,16 @@ function showToast(message, type = 'info') {
     bsToast.show();
 }
 
-// API helpers
+// API helpers - ALWAYS get token from localStorage
 async function apiRequest(endpoint, options = {}) {
+    // Always get the latest token from localStorage
+    const token = localStorage.getItem('accessToken');
+    
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers
     };
     
-    // IMPORTANT: Always check for the latest token
-    const token = localStorage.getItem('accessToken');
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
         window.accessToken = token;
@@ -98,8 +98,8 @@ document.addEventListener('DOMContentLoaded', function() {
         window.accessToken = savedToken;
         window.currentUser = JSON.parse(savedUser);
         updateAuthUI();
-        // Load profile to verify token is valid
-        loadProfile();
+        // Load profile after a small delay to ensure UI is ready
+        setTimeout(() => loadProfile(), 100);
     }
     
     // Navigation links
@@ -171,13 +171,20 @@ function updateAuthUI() {
     const navUser = document.getElementById('nav-user');
     const userDisplay = document.getElementById('userDisplay');
     
-    if (accessToken && currentUser) {
+    const token = localStorage.getItem('accessToken');
+    const user = localStorage.getItem('currentUser');
+    
+    if (token && user) {
+        window.accessToken = token;
+        window.currentUser = JSON.parse(user);
         navAuth.classList.add('d-none');
         navUser.classList.remove('d-none');
-        userDisplay.textContent = currentUser.username || 'User';
+        userDisplay.textContent = window.currentUser.username || 'User';
     } else {
         navAuth.classList.remove('d-none');
         navUser.classList.add('d-none');
+        window.accessToken = null;
+        window.currentUser = null;
     }
 }
 
@@ -194,7 +201,8 @@ async function loadProfile() {
         
         const response = await fetch(`${API_BASE}/api/auth/me`, {
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
         
@@ -212,10 +220,12 @@ async function loadProfile() {
                 showToast('Session expired. Please login again.', 'error');
                 return;
             }
-            throw new Error('Failed to load profile');
+            throw new Error(`Failed to load profile: ${response.status}`);
         }
         
         const userData = await response.json();
+        console.log('👤 User data loaded:', userData);
+        
         window.currentUser = userData;
         localStorage.setItem('currentUser', JSON.stringify(userData));
         
