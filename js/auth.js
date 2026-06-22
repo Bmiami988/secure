@@ -1,15 +1,7 @@
-// js/auth.js - Complete updated version
+// js/auth.js - Complete updated version with shared state
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if user is already logged in
-    const savedToken = localStorage.getItem('accessToken');
-    const savedUser = localStorage.getItem('currentUser');
-    
-    if (savedToken && savedUser) {
-        window.accessToken = savedToken;
-        window.currentUser = JSON.parse(savedUser);
-        updateAuthUI();
-        setTimeout(() => loadProfile(), 100);
-    }
+    // Load saved auth state
+    loadAuthState();
     
     // Register form
     const registerForm = document.getElementById('registerForm');
@@ -35,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const requestData = { username, email, password };
-            console.log('📤 Sending to:', `${API_BASE}/api/auth/register`);
+            console.log('📤 Sending registration to:', `${API_BASE}/api/auth/register`);
             
             try {
                 const response = await fetch(`${API_BASE}/api/auth/register`, {
@@ -46,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify(requestData)
                 });
                 
-                console.log('📥 Response status:', response.status);
+                console.log('📥 Registration response status:', response.status);
                 
                 let data;
                 const contentType = response.headers.get('content-type');
@@ -55,8 +47,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     data = await response.text();
                 }
-                
-                console.log('📥 Response data:', data);
                 
                 if (!response.ok) {
                     const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Registration failed' : data;
@@ -72,6 +62,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (modal) modal.hide();
                     registerForm.reset();
                     document.getElementById('registerError').innerHTML = '';
+                    
+                    // Auto-fill login form
+                    document.getElementById('loginUsername').value = username;
+                    document.getElementById('loginPassword').value = password;
+                    
+                    // Show login modal
+                    const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+                    loginModal.show();
                 }, 2000);
                 
             } catch (error) {
@@ -124,22 +122,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     data = await response.text();
                 }
                 
-                console.log('📥 Login response data:', data);
-                
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        document.getElementById('loginError').innerHTML = 
+                            `<div class="status-error">❌ Invalid username or password. Please register first.</div>`;
+                        showToast('Invalid credentials. Please register or try again.', 'error');
+                        return;
+                    }
                     const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Login failed' : data;
                     throw new Error(errorMessage);
                 }
                 
-                // ✅ SAVE TOKEN
+                // ✅ SAVE TOKEN using shared state
                 const token = data.access_token;
                 console.log('🔑 Token received:', token.substring(0, 30) + '...');
                 
-                // Save to localStorage
-                localStorage.setItem('accessToken', token);
-                window.accessToken = token;
-                
-                // ✅ Get user info with the token
+                // Get user info
                 console.log('🔄 Getting user info...');
                 const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
                     headers: {
@@ -148,26 +146,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
                 
-                console.log('📥 User info response status:', userResponse.status);
-                
                 if (!userResponse.ok) {
-                    // Token saved but user info failed
-                    console.error('Failed to get user info, but token was saved');
-                    localStorage.removeItem('accessToken');
-                    window.accessToken = null;
-                    throw new Error('Failed to get user information. Please try again.');
+                    throw new Error('Failed to get user information');
                 }
                 
                 const userData = await userResponse.json();
                 console.log('👤 User data:', userData);
                 
-                window.currentUser = userData;
-                localStorage.setItem('currentUser', JSON.stringify(userData));
+                // ✅ Set auth state using shared function
+                setAuthState(token, userData);
                 
                 // ✅ Update UI
                 updateAuthUI();
-                document.getElementById('profileUsername').textContent = userData.username || 'User';
-                document.getElementById('profileEmail').textContent = userData.email || '';
                 document.getElementById('loginError').innerHTML = '';
                 showToast(`Welcome back, ${userData.username}!`, 'success');
                 
@@ -175,6 +165,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 const modal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
                 if (modal) modal.hide();
                 loginForm.reset();
+                
+                // Load files and messages if authenticated
+                if (authState.isAuthenticated) {
+                    loadFiles();
+                    loadMessages();
+                }
                 
                 console.log('✅ Login complete!');
                 
@@ -193,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Change password
     document.getElementById('changePasswordBtn')?.addEventListener('click', function() {
-        if (!window.accessToken) {
+        if (!authState.isAuthenticated) {
             showToast('Please login first', 'error');
             return;
         }
@@ -230,29 +226,7 @@ async function logout() {
         // Ignore logout errors
     }
     
-    window.accessToken = null;
-    window.currentUser = null;
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('currentUser');
-    
-    updateAuthUI();
+    clearAuthState();
     showToast('Logged out successfully', 'info');
     showSection('home');
-}
-
-async function loadProfile() {
-    if (!window.accessToken) return;
-    
-    try {
-        const user = await apiRequest('/api/auth/me');
-        window.currentUser = user;
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        
-        document.getElementById('profileUsername').textContent = user.username || 'User';
-        document.getElementById('profileEmail').textContent = user.email || '';
-        updateAuthUI();
-        
-    } catch (error) {
-        console.error('Failed to load profile:', error);
-    }
 }
