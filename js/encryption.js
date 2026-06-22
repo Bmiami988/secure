@@ -11,8 +11,10 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function encryptMessage() {
-    if (!accessToken) {
+    if (!authState.isAuthenticated) {
         showToast('Please login first', 'error');
+        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+        loginModal.show();
         return;
     }
     
@@ -52,8 +54,10 @@ async function encryptMessage() {
 }
 
 async function decryptMessage() {
-    if (!accessToken) {
+    if (!authState.isAuthenticated) {
         showToast('Please login first', 'error');
+        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+        loginModal.show();
         return;
     }
     
@@ -69,15 +73,13 @@ async function decryptMessage() {
     try {
         status.innerHTML = '<div class="status-loading"><i class="fas fa-spinner fa-spin me-2"></i>Decrypting...</div>';
         
-        // We need salt and iv - for demo, we'll use the encrypted data as-is
-        // In production, you'd store these with the encrypted data
         const data = await apiRequest('/api/encryption/decrypt', {
             method: 'POST',
             body: JSON.stringify({
                 encrypted_data: encrypted,
                 password: key,
-                salt: '', // Should be stored with encrypted data
-                iv: ''    // Should be stored with encrypted data
+                salt: '',
+                iv: ''
             })
         });
         
@@ -92,7 +94,7 @@ async function decryptMessage() {
 }
 
 async function loadMessages() {
-    if (!accessToken) return;
+    if (!authState.isAuthenticated) return;
     
     const container = $('#messageList');
     
@@ -130,12 +132,14 @@ async function loadMessages() {
             </div>
         `).join('');
         
-        // Add view handlers
         container.querySelectorAll('.view-message').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
-                showToast(`Message #${id} - Check console for details`, 'info');
-                console.log('Message details:', messages.find(m => m.id == id));
+                const msg = messages.find(m => m.id == id);
+                if (msg) {
+                    showToast(`Message #${id}`, 'info');
+                    console.log('Message details:', msg);
+                }
             });
         });
         
