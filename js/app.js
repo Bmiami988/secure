@@ -1,5 +1,10 @@
 // js/app.js
-const API_BASE = window.location.origin || 'https://secure-portal.fastapicloud.dev';
+// Force the API URL to your deployed backend
+const API_BASE = 'https://secure-portal.fastapicloud.dev';
+
+// For debugging - log the API URL
+console.log('🌐 API_BASE:', API_BASE);
+
 let currentUser = null;
 let accessToken = null;
 
@@ -9,13 +14,13 @@ function showToast(message, type = 'info') {
     const toastMessage = document.getElementById('toastMessage');
     
     toastMessage.textContent = message;
-    toast.className = `toast align-items-center border-0 text-white bg-${type === 'error' ? 'danger' : 'dark'}`;
+    toast.className = `toast align-items-center border-0 text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'dark'}`;
     
     const bsToast = new bootstrap.Toast(toast, { delay: 4000 });
     bsToast.show();
 }
 
-// API helpers
+// API helpers with better error handling
 async function apiRequest(endpoint, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
@@ -26,18 +31,37 @@ async function apiRequest(endpoint, options = {}) {
         headers['Authorization'] = `Bearer ${accessToken}`;
     }
     
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        ...options,
-        headers
-    });
+    const url = `${API_BASE}${endpoint}`;
+    console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
     
-    const data = await response.json().catch(() => ({}));
-    
-    if (!response.ok) {
-        throw new Error(data.detail || data.message || 'Request failed');
+    try {
+        const response = await fetch(url, {
+            ...options,
+            headers
+        });
+        
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            data = await response.text();
+        }
+        
+        if (!response.ok) {
+            const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Request failed' : data || 'Request failed';
+            throw new Error(errorMessage);
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('❌ API Error:', error);
+        if (error.message === 'Failed to fetch') {
+            throw new Error('Cannot connect to server. Please check if the backend is running.');
+        }
+        throw error;
     }
-    
-    return data;
 }
 
 // DOM helpers
@@ -62,6 +86,17 @@ function showSection(sectionId) {
 document.addEventListener('DOMContentLoaded', function() {
     // Show home section by default
     showSection('home');
+    
+    // Check if user is already logged in
+    const savedToken = localStorage.getItem('accessToken');
+    const savedUser = localStorage.getItem('currentUser');
+    
+    if (savedToken && savedUser) {
+        window.accessToken = savedToken;
+        window.currentUser = JSON.parse(savedUser);
+        updateAuthUI();
+        loadProfile();
+    }
     
     // Navigation links
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -111,8 +146,14 @@ document.addEventListener('DOMContentLoaded', function() {
     $('#copyResult')?.addEventListener('click', async function() {
         const result = $('#resultOutput');
         if (result.value) {
-            await navigator.clipboard.writeText(result.value);
-            showToast('Copied to clipboard!', 'info');
+            try {
+                await navigator.clipboard.writeText(result.value);
+                showToast('Copied to clipboard!', 'success');
+            } catch {
+                result.select();
+                document.execCommand('copy');
+                showToast('Copied to clipboard!', 'success');
+            }
         }
     });
     
@@ -137,6 +178,24 @@ function updateAuthUI() {
     }
 }
 
+// Load profile
+async function loadProfile() {
+    if (!accessToken) return;
+    
+    try {
+        const user = await apiRequest('/api/auth/me');
+        window.currentUser = user;
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        
+        document.getElementById('profileUsername').textContent = user.username || 'User';
+        document.getElementById('profileEmail').textContent = user.email || '';
+        updateAuthUI();
+        
+    } catch (error) {
+        console.error('Failed to load profile:', error);
+    }
+}
+
 // Export for other modules
 window.API_BASE = API_BASE;
 window.accessToken = accessToken;
@@ -145,3 +204,4 @@ window.showToast = showToast;
 window.apiRequest = apiRequest;
 window.showSection = showSection;
 window.updateAuthUI = updateAuthUI;
+window.loadProfile = loadProfile;
