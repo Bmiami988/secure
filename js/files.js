@@ -8,8 +8,10 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function uploadFile() {
-    if (!accessToken) {
+    if (!authState.isAuthenticated) {
         showToast('Please login first', 'error');
+        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+        loginModal.show();
         return;
     }
     
@@ -41,7 +43,7 @@ async function uploadFile() {
         const response = await fetch(`${API_BASE}/api/files/upload`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${authState.accessToken}`
             },
             body: formData
         });
@@ -70,7 +72,7 @@ async function uploadFile() {
 }
 
 async function loadFiles() {
-    if (!accessToken) return;
+    if (!authState.isAuthenticated) return;
     
     const container = $('#fileList');
     
@@ -113,7 +115,6 @@ async function loadFiles() {
             </div>
         `).join('');
         
-        // Download handlers
         container.querySelectorAll('.download-file').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
@@ -121,7 +122,6 @@ async function loadFiles() {
             });
         });
         
-        // Delete handlers
         container.querySelectorAll('.delete-file').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
@@ -137,7 +137,10 @@ async function loadFiles() {
 }
 
 async function downloadFile(fileId) {
-    if (!accessToken) return;
+    if (!authState.isAuthenticated) {
+        showToast('Please login first', 'error');
+        return;
+    }
     
     const password = prompt('Enter the encryption key for this file:');
     if (!password) return;
@@ -148,7 +151,7 @@ async function downloadFile(fileId) {
         const response = await fetch(`${API_BASE}/api/files/download/${fileId}?password=${encodeURIComponent(password)}`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${authState.accessToken}`
             }
         });
         
@@ -157,7 +160,6 @@ async function downloadFile(fileId) {
             throw new Error(error.detail || 'Download failed');
         }
         
-        // Get filename from Content-Disposition header
         const contentDisposition = response.headers.get('Content-Disposition');
         let filename = 'downloaded_file';
         if (contentDisposition) {
@@ -184,7 +186,10 @@ async function downloadFile(fileId) {
 }
 
 async function deleteFile(fileId) {
-    if (!accessToken) return;
+    if (!authState.isAuthenticated) {
+        showToast('Please login first', 'error');
+        return;
+    }
     
     try {
         await apiRequest(`/api/files/${fileId}`, {
