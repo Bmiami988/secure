@@ -1,4 +1,4 @@
-// js/auth.js
+// js/auth.js - Complete updated version
 document.addEventListener('DOMContentLoaded', function() {
     // Check if user is already logged in
     const savedToken = localStorage.getItem('accessToken');
@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
         window.accessToken = savedToken;
         window.currentUser = JSON.parse(savedUser);
         updateAuthUI();
-        loadProfile();
+        setTimeout(() => loadProfile(), 100);
     }
     
     // Register form
@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Login form - FIXED to properly save token
+    // Login form - FIXED
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', async function(e) {
@@ -124,14 +124,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     data = await response.text();
                 }
                 
-                console.log('📥 Login response:', data);
+                console.log('📥 Login response data:', data);
                 
                 if (!response.ok) {
                     const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Login failed' : data;
                     throw new Error(errorMessage);
                 }
                 
-                // SAVE TOKEN
+                // ✅ SAVE TOKEN
                 const token = data.access_token;
                 console.log('🔑 Token received:', token.substring(0, 30) + '...');
                 
@@ -139,39 +139,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.setItem('accessToken', token);
                 window.accessToken = token;
                 
-                // Get user info with the token
+                // ✅ Get user info with the token
                 console.log('🔄 Getting user info...');
                 const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
                 });
                 
                 console.log('📥 User info response status:', userResponse.status);
                 
-                if (userResponse.ok) {
-                    const userData = await userResponse.json();
-                    console.log('👤 User data:', userData);
-                    
-                    window.currentUser = userData;
-                    localStorage.setItem('currentUser', JSON.stringify(userData));
-                    
-                    updateAuthUI();
-                    loadProfile();
-                    document.getElementById('loginError').innerHTML = '';
-                    showToast(`Welcome back, ${userData.username}!`, 'success');
-                    
-                    // Close modal
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
-                    if (modal) modal.hide();
-                    loginForm.reset();
-                } else {
-                    // Token was saved but user info failed
-                    console.error('Failed to get user info');
+                if (!userResponse.ok) {
+                    // Token saved but user info failed
+                    console.error('Failed to get user info, but token was saved');
                     localStorage.removeItem('accessToken');
                     window.accessToken = null;
-                    throw new Error('Failed to get user information');
+                    throw new Error('Failed to get user information. Please try again.');
                 }
+                
+                const userData = await userResponse.json();
+                console.log('👤 User data:', userData);
+                
+                window.currentUser = userData;
+                localStorage.setItem('currentUser', JSON.stringify(userData));
+                
+                // ✅ Update UI
+                updateAuthUI();
+                document.getElementById('profileUsername').textContent = userData.username || 'User';
+                document.getElementById('profileEmail').textContent = userData.email || '';
+                document.getElementById('loginError').innerHTML = '';
+                showToast(`Welcome back, ${userData.username}!`, 'success');
+                
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+                if (modal) modal.hide();
+                loginForm.reset();
+                
+                console.log('✅ Login complete!');
                 
             } catch (error) {
                 console.error('❌ Login error:', error);
