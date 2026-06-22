@@ -12,95 +12,183 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Register form
-    $('#registerForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const username = $('#registerUsername').value.trim();
-        const email = $('#registerEmail').value.trim();
-        const password = $('#registerPassword').value;
-        
-        try {
-            const data = await apiRequest('/api/auth/register', {
-                method: 'POST',
-                body: JSON.stringify({ username, email, password })
-            });
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            console.log('📝 Register form submitted');
             
-            showToast('Registration successful! Please login.', 'success');
-            $('#registerModal').modal('hide');
-            this.reset();
-            $('#registerError').innerHTML = '';
+            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value;
             
-        } catch (error) {
-            $('#registerError').innerHTML = `<div class="status-error">${error.message}</div>`;
-        }
-    });
-    
-    // Login form
-    $('#loginForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const username = $('#loginUsername').value;
-        const password = $('#loginPassword').value;
-        
-        try {
-            const formData = new URLSearchParams();
-            formData.append('username', username);
-            formData.append('password', password);
-            
-            const response = await fetch(`${API_BASE}/api/auth/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.detail || 'Login failed');
+            // Validate input
+            if (!username || !email || !password) {
+                document.getElementById('registerError').innerHTML = 
+                    '<div class="status-error">All fields are required</div>';
+                return;
             }
             
-            window.accessToken = data.access_token;
-            localStorage.setItem('accessToken', data.access_token);
+            // Validate password strength
+            if (password.length < 8) {
+                document.getElementById('registerError').innerHTML = 
+                    '<div class="status-error">Password must be at least 8 characters</div>';
+                return;
+            }
             
-            // Get user info
-            const userData = await apiRequest('/api/auth/me', {
-                headers: {
-                    'Authorization': `Bearer ${data.access_token}`
+            const requestData = { username, email, password };
+            console.log('📤 Sending to:', `${API_BASE}/api/auth/register`);
+            console.log('📤 Data:', requestData);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                console.log('📥 Response status:', response.status);
+                
+                let data;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
                 }
-            });
+                
+                console.log('📥 Response data:', data);
+                
+                if (!response.ok) {
+                    const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Registration failed' : data;
+                    throw new Error(errorMessage);
+                }
+                
+                // Success
+                document.getElementById('registerError').innerHTML = 
+                    '<div class="status-success">✅ Registration successful! Please login.</div>';
+                showToast('Registration successful! Please login.', 'success');
+                
+                // Close modal after delay
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('registerModal'));
+                    if (modal) modal.hide();
+                    registerForm.reset();
+                    document.getElementById('registerError').innerHTML = '';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('❌ Registration error:', error);
+                document.getElementById('registerError').innerHTML = 
+                    `<div class="status-error">❌ ${error.message}</div>`;
+                showToast(error.message, 'error');
+            }
+        });
+    }
+    
+    // Login form
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            console.log('🔐 Login form submitted');
             
-            window.currentUser = userData;
-            localStorage.setItem('currentUser', JSON.stringify(userData));
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
             
-            updateAuthUI();
-            loadProfile();
-            $('#loginModal').modal('hide');
-            this.reset();
-            $('#loginError').innerHTML = '';
-            showToast(`Welcome back, ${userData.username}!`, 'success');
+            if (!username || !password) {
+                document.getElementById('loginError').innerHTML = 
+                    '<div class="status-error">All fields are required</div>';
+                return;
+            }
             
-        } catch (error) {
-            $('#loginError').innerHTML = `<div class="status-error">${error.message}</div>`;
-        }
-    });
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+                
+                console.log('📤 Sending login to:', `${API_BASE}/api/auth/login`);
+                
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                });
+                
+                console.log('📥 Login response status:', response.status);
+                
+                let data;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
+                }
+                
+                console.log('📥 Login response data:', data);
+                
+                if (!response.ok) {
+                    const errorMessage = typeof data === 'object' ? data.detail || data.message || 'Login failed' : data;
+                    throw new Error(errorMessage);
+                }
+                
+                // Success - save token
+                window.accessToken = data.access_token;
+                localStorage.setItem('accessToken', data.access_token);
+                
+                // Get user info
+                const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${data.access_token}`
+                    }
+                });
+                
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
+                    window.currentUser = userData;
+                    localStorage.setItem('currentUser', JSON.stringify(userData));
+                    
+                    updateAuthUI();
+                    loadProfile();
+                    document.getElementById('loginError').innerHTML = '';
+                    showToast(`Welcome back, ${userData.username}!`, 'success');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+                    if (modal) modal.hide();
+                    loginForm.reset();
+                }
+                
+            } catch (error) {
+                console.error('❌ Login error:', error);
+                document.getElementById('loginError').innerHTML = 
+                    `<div class="status-error">❌ ${error.message}</div>`;
+                showToast(error.message, 'error');
+            }
+        });
+    }
     
     // Logout
-    $('#logoutBtn').addEventListener('click', logout);
-    $('#profileLogoutBtn').addEventListener('click', logout);
+    document.getElementById('logoutBtn')?.addEventListener('click', logout);
+    document.getElementById('profileLogoutBtn')?.addEventListener('click', logout);
     
     // Change password
-    $('#changePasswordBtn').addEventListener('click', function() {
-        if (!accessToken) {
+    document.getElementById('changePasswordBtn')?.addEventListener('click', function() {
+        if (!window.accessToken) {
             showToast('Please login first', 'error');
             return;
         }
-        $('#changePasswordModal').modal('show');
+        document.getElementById('changePasswordModal').modal('show');
     });
     
-    $('#changePasswordForm').addEventListener('submit', async function(e) {
+    document.getElementById('changePasswordForm')?.addEventListener('submit', async function(e) {
         e.preventDefault();
-        const oldPassword = $('#currentPassword').value;
-        const newPassword = $('#newPassword').value;
+        const oldPassword = document.getElementById('currentPassword').value;
+        const newPassword = document.getElementById('newPassword').value;
         
         try {
             await apiRequest('/api/user/change-password', {
@@ -109,12 +197,13 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             showToast('Password changed successfully!', 'success');
-            $('#changePasswordModal').modal('hide');
+            document.getElementById('changePasswordModal').modal('hide');
             this.reset();
-            $('#changePasswordError').innerHTML = '';
+            document.getElementById('changePasswordError').innerHTML = '';
             
         } catch (error) {
-            $('#changePasswordError').innerHTML = `<div class="status-error">${error.message}</div>`;
+            document.getElementById('changePasswordError').innerHTML = 
+                `<div class="status-error">${error.message}</div>`;
         }
     });
 });
@@ -137,15 +226,15 @@ async function logout() {
 }
 
 async function loadProfile() {
-    if (!accessToken) return;
+    if (!window.accessToken) return;
     
     try {
         const user = await apiRequest('/api/auth/me');
         window.currentUser = user;
         localStorage.setItem('currentUser', JSON.stringify(user));
         
-        $('#profileUsername').textContent = user.username || 'User';
-        $('#profileEmail').textContent = user.email || '';
+        document.getElementById('profileUsername').textContent = user.username || 'User';
+        document.getElementById('profileEmail').textContent = user.email || '';
         updateAuthUI();
         
     } catch (error) {
